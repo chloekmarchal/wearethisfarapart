@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>we're this far apart</title>
+
+  <!-- p5.js -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.0/p5.min.js"></script>
+
+  <!-- MediaPipe Hands -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.min.js"></script>
+
+  <style>
+    body {
+      margin: 0;
+      background: #ffffff;
+      color: rgb(0, 0, 0);
+      font-family: Arial, Helvetica, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    canvas {
+      /* border: 2px solid #0ff; */
+      /* border-radius: 8px; */
+      margin-top: 20px;
+    }
+  </style>
+</head>
+<body>
+<h1>we're this far apart</h1>
+<p> (it's more fun with a friend by your side) </p>
+
+<script>
+  let video;
+  let hands;
+  let camera;
+  let results = null;
+
+  // Pixel range for hand gestures
+  const minPx = 50;
+  const maxPx = 400;
+
+  // Cities and distances from Montreal (km)
+  const cities = [
+    { name: "Toronto", distance: 540 },
+    { name: "Mississauga", distance: 550 },
+    { name: "Scarborough", distance: 565 },
+    { name: "Rancho Palos Verdes, CA", distance: 4100 },
+    { name: "Long Beach, CA", distance: 4000 },
+    { name: "Los Angeles", distance: 4200 },
+    { name: "Valence", distance: 5200 },
+    { name: "Strasbourg", distance: 5400 },
+    { name: "Paris", distance: 5500 },
+    { name: "Shanghai", distance: 11000 },
+    { name: "Hong Kong", distance: 12800 },
+    { name: "Saigon", distance: 13000 }
+  ];
+
+  // Map km to pixel distance
+  function kmToPixels(km) {
+    const minKm = cities[0].distance;
+    const maxKm = cities[cities.length - 1].distance;
+    return map(km, minKm, maxKm, minPx, maxPx, true);
+  }
+
+  function setup() {
+    createCanvas(640, 480);
+    video = createCapture(VIDEO);
+    video.size(width, height);
+    video.hide();
+
+    hands = new Hands({
+      locateFile: (file) =>
+        `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`,
+    });
+
+    hands.setOptions({
+      maxNumHands: 2,
+      modelComplexity: 1,
+      minDetectionConfidence: 0.7,
+      minTrackingConfidence: 0.7,
+    });
+
+    hands.onResults((res) => {
+      results = res;
+    });
+
+    camera = new Camera(video.elt, {
+      onFrame: async () => {
+        if (video.elt.readyState >= 2) {
+          await hands.send({ image: video.elt });
+        }
+      },
+      width: width,
+      height: height,
+    });
+    camera.start();
+  }
+
+  function draw() {
+    background(0);
+
+    // Mirror video
+    push();
+    translate(width, 0);
+    scale(-1, 1);
+    image(video, 0, 0, width, height);
+    pop();
+
+    if (results && results.multiHandLandmarks) {
+      drawHands(results.multiHandLandmarks);
+    } else {
+      fill(255);
+      noStroke();
+      textSize(24);
+      text("plz put ur hands up ;P", 20, 40);
+    }
+  }
+
+  function drawHands(multiHandLandmarks) {
+    let indexTips = [];
+
+    for (let i = 0; i < multiHandLandmarks.length; i++) {
+      const landmarks = multiHandLandmarks[i];
+      const color = i === 0 ? [0, 255, 0] : [0, 200, 255];
+
+      // Draw landmarks
+      for (let j = 0; j < landmarks.length; j++) {
+        const x = width - landmarks[j].x * width;
+        const y = landmarks[j].y * height;
+        fill(...color);
+        noStroke();
+        circle(x, y, 0.06);
+      }
+
+      // Index fingertip
+      const tip = landmarks[8];
+      const tipX = width - tip.x * width;
+      const tipY = tip.y * height;
+      fill(255, 255, 255);
+      circle(tipX, tipY, 15);
+      indexTips.push({ x: tipX, y: tipY });
+    }
+
+    if (indexTips.length === 2) {
+      const a = indexTips[0];
+      const b = indexTips[1];
+
+      // Draw line
+      stroke(255, 255, 255);
+    //   strokeWeight(3);
+      line(a.x, a.y, b.x, b.y);
+
+      // Pixel distance between fingertips
+      const pxDist = dist(a.x, a.y, b.x, b.y);
+
+      // Midpoint of line
+      const midX = (a.x + b.x) / 2;
+      const midY = (a.y + b.y) / 2;
+
+      // Angle of line
+      const angle = atan2(b.y - a.y, b.x - a.x);
+
+      // Find nearest city based on pixel distance
+      let nearestCity = cities.reduce((prev, curr) => {
+        const cityPx = kmToPixels(curr.distance);
+        return Math.abs(cityPx - pxDist) < Math.abs(kmToPixels(prev.distance) - pxDist)
+          ? curr
+          : prev;
+      });
+
+      const cityPx = kmToPixels(nearestCity.distance);
+
+      // Draw rotated text
+      push();
+      translate(midX, midY);
+      rotate(angle);
+      textAlign(CENTER, BOTTOM);
+      fill(255);
+      textSize(20);
+      text(`${nearestCity.name} is ${nf(cityPx, 0, 0)} px from Montreal`, 0, -10);
+      pop();
+    }
+  }
+</script>
+</body>
+</html>
